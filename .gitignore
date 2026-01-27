@@ -1,0 +1,17 @@
+# Binaires et dossiers de build
+bin/*
+obj/*
+!bin/data/
+
+# Configuration IDE
+.vscode/
+.DS_Store
+*.swp
+
+# Fichiers de projet générés
+/Makefile
+/*.workspace
+/*.xcodeproj
+/*.sln
+/*.vcxproj
+/*.user
