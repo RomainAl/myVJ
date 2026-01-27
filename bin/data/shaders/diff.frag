@@ -24,10 +24,8 @@ void main() {
     // On utilise uThreshold pour doser l'influence du masque.
     // On peut aussi utiliser un simple if ou un mix :
     
-    float finalMask = mask;
-    if(uThreshold <= 0.001) {
-        finalMask = 1.0; // Affiche tout si le slider est à zéro
-    }
+    float influenceMouvement = clamp(uThreshold * 5.0, 0.0, 1.0); // Monte vite à 1.0
+    float finalMask = mix(1.0, mask, influenceMouvement);
 
     outputColor = vec4(now.rgb * finalMask, finalMask * uOpacity);
 }

@@ -32,6 +32,7 @@ public:
     ofTexture texCopy;
     ofShader meshShader;
     ofVboMesh mainMesh;
+    ofVboMesh wireframeMesh;
     ofFbo renderFbo;
     ofShader diffShader;
     ofFbo motionFbo;
@@ -49,6 +50,8 @@ public:
     ofParameter<float> videoOpacity;
     ofParameter<float> smoothFactor;
     ofParameter<float> motionThreshold;
+    ofParameter<bool> showWireframe;
+    ofParameter<bool> showFaces;
     ofParameterGroup points;
     ofParameter<bool> showMesh;
     ofParameter<float> extrusionAmount;

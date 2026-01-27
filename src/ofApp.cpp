@@ -17,13 +17,15 @@ void ofApp::setup() {
     motionFbo.allocate(1920, 1080, GL_RGBA);
 
     // --- Setup GUI ---
-    gui.setup("Parametres Cloud");
+    gui.setup("SETTINGS");
     onoff.setName("Affichage");
     onoff.add(showVideo.set("Afficher Video", true));
     onoff.add(videoOpacity.set("Video Opacity", 1, 0, 1));
     onoff.add(showMesh.set("Afficher Mesh", true));
+    onoff.add(showWireframe.set("Afficher Wireframe", true));
+    onoff.add(showFaces.set("Afficher Faces", false));
     onoff.add(smoothFactor.set("Lissage Global", 0.01, 0.01, 0.5));
-    onoff.add(motionThreshold.set("Seuil Mouvement", 0.1, 0.0, 1.0));
+    onoff.add(motionThreshold.set("Seuil Mouvement", 0.0, 0.0, 1.0));
     points.setName("Points");
     points.add(extrusionAmount.set("Extrusion", 0.0, 0.0, 10.0));
     points.add(pointSize.set("Taille Points", 2.0, 0.5, 50.0));
@@ -53,24 +55,34 @@ void ofApp::setup() {
 void ofApp::onDensityChanged(int & val) {
     mainMesh.clear();
     mainMesh.setMode(OF_PRIMITIVE_POINTS);
-    
+    wireframeMesh.clear();
+    wireframeMesh.setMode(OF_PRIMITIVE_TRIANGLES);
+
     float aspect = texCopy.isAllocated() ? (texCopy.getWidth() / texCopy.getHeight()) : (16.0 / 9.0);
-    
     int numY = val;
     int numX = (int)(val * aspect);
 
     for(int y=0; y<numY; y++) {
         for(int x=0; x<numX; x++) {
-            // POSITION : On crée un rectangle qui va de -0.88 à +0.88 sur X
-            // et de -0.5 à +0.5 sur Y. Taille totale = 1.0 de haut.
             float posX = ((float)x / (numX - 1) - 0.5) * aspect;
             float posY = ((float)y / (numY - 1) - 0.5);
-            mainMesh.addVertex(glm::vec3(posX, posY, 0));
-            
-            // TEXTURE : On reste simple, 0.0 à 1.0
-            float tx = (float)x / (numX - 1);
-            float ty = (float)y / (numY - 1); // On gérera l'inversion dans le shader !
-            mainMesh.addTexCoord(glm::vec2(tx, ty));
+            glm::vec3 pos(posX, posY, 0);
+            glm::vec2 uv((float)x / (numX - 1), (float)y / (numY - 1));
+
+            mainMesh.addVertex(pos);
+            mainMesh.addTexCoord(uv);
+
+            wireframeMesh.addVertex(pos);
+            wireframeMesh.addTexCoord(uv);
+
+            if(x < numX - 1 && y < numY - 1) {
+                int i1 = x + y * numX;
+                int i2 = (x + 1) + y * numX;
+                int i3 = x + (y + 1) * numX;
+                int i4 = (x + 1) + (y + 1) * numX;
+                wireframeMesh.addIndex(i1); wireframeMesh.addIndex(i2); wireframeMesh.addIndex(i3);
+                wireframeMesh.addIndex(i2); wireframeMesh.addIndex(i4); wireframeMesh.addIndex(i3);
+            }
         }
     }
 }
@@ -118,7 +130,7 @@ void ofApp::update() {
 
     vector<ofParameter<float>*> toSmooth = { 
         &extrusionAmount, &turbulence, &turbulenceXY, 
-        &pointSize, &zOffset, &stretchX, &stretchY 
+        &pointSize, &zOffset, &stretchX, &stretchY,
     };
 
     for(auto p : toSmooth) {
@@ -152,10 +164,15 @@ void ofApp::draw() {
 
     // --- PASSE 1 : CALCUL DU MOUVEMENT ---
     motionFbo.begin();
-        // ofClear(0, 255);
-        ofEnableAlphaBlending();
-        ofSetColor(0, 0, 0, 15); 
-        ofDrawRectangle(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
+        if(motionThreshold > 0.001) {
+            ofEnableAlphaBlending();
+            ofSetColor(0, 0, 0, 15); 
+            ofDrawRectangle(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
+            ofDisableAlphaBlending();
+        } else {
+            // Si threshold à 0, on vide proprement pour avoir l'image nette
+            ofClear(0, 255);
+        }
         diffShader.begin();
             diffShader.setUniformTexture("tex0", texCopy, 0);
             // On utilise la texture du FBO de la frame précédente
@@ -170,23 +187,24 @@ void ofApp::draw() {
     // --- PASSE 2 : RENDU FINAL ---
     renderFbo.begin();
         ofClear(0, 0, 0, 255);
-        ofEnableDepthTest();
 
         float fboW = renderFbo.getWidth();
         float fboH = renderFbo.getHeight();
         float aspect = texCopy.getWidth() / texCopy.getHeight();
 
+        ofEnableBlendMode(OF_BLENDMODE_ADD);
         ofPushMatrix();
-            ofTranslate(fboW / 2.0, fboH / 2.0, zOffset);
+            ofTranslate(fboW / 2.0, fboH / 2.0, smoothedParams["Recul (Z)"]);
             ofScale(fboH, fboH, fboH);
 
             if(showVideo){
-                // On dessine le résultat du motionFbo directement
+                ofDisableDepthTest();
                 ofSetColor(255);
                 motionFbo.getTexture().draw(-aspect/2.0, -0.5, -0.01, aspect, 1.0);
             }
 
             if(showMesh){
+                ofDisableDepthTest();
                 meshShader.begin();
                     // On passe le motionFbo comme texture principale !
                     meshShader.setUniformTexture("tex0", motionFbo.getTexture(), 0);
@@ -199,13 +217,25 @@ void ofApp::draw() {
                     meshShader.setUniform1f("uTime", ofGetElapsedTimef());
                     meshShader.setUniform4f("uColorTint", colorTint->r/255.0, colorTint->g/255.0, colorTint->b/255.0, colorTint->a/255.0);
                     mainMesh.draw();
+
+                    if(showFaces){
+                        meshShader.setUniform1f("uAlphaMult", 0.2);
+                        wireframeMesh.setMode(OF_PRIMITIVE_TRIANGLES);
+                        wireframeMesh.drawFaces(); 
+                    }
+
+                    // 3. LE WIREFRAME (Les arrêtes)
+                    if(showWireframe){
+                        meshShader.setUniform1f("uAlphaMult", 0.6);
+                        wireframeMesh.drawWireframe();
+                    }
+                    
                 meshShader.end();
             }
         ofPopMatrix();
+        ofDisableDepthTest();
+        ofDisableAlphaBlending();
     renderFbo.end();
-
-    // Affichage final
-    ofDisableDepthTest();
     renderFbo.draw(0, 0, ofGetWidth(), ofGetHeight());
     syphonServer.publishTexture(&renderFbo.getTexture());
     
