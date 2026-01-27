@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "${workspaceRoot}/../../../../libs/openFrameworks"
+		},
+		{
+			"path": "${workspaceRoot}/../../../../addons/ofxSyphon"
+		},
+		{
+			"path": "${workspaceRoot}/../../../../addons/ofxGui"
+		},
+		{
+			"path": "${workspaceRoot}/../../../../addons/ofxSyphon"
+		}
+	],
+	"openFrameworksProjectGeneratorVersion": "0.103.0",
+	"settings": {}
+}
