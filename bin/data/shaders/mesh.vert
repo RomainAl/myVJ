@@ -66,27 +66,27 @@ float snoise(vec3 v) {
 
 void main() {
     vec2 texSize = textureSize(tex0);
-    vec2 flippedCoord = vec2(texcoord.x, 1.0 - texcoord.y);
-    vec4 col = texture(tex0, flippedCoord * texSize);
+    vec4 col = texture(tex0, texcoord * texSize);
     vColor = col * uColorTint;
     vec4 pos = position;
+    float motionMask = col.a;
 
     // POS
     float freq = 1.5;
     float speed = uTime * 0.5;
-    float noiseX = snoise(vec3(pos.xy * freq * 110, speed));
-    float noiseY = snoise(vec3(pos.xy * freq * 99  + 10.0, speed)); // +10 pour varier le motif
+    float noiseX = snoise(vec3(pos.xy * freq * 110, speed)) * motionMask;
+    float noiseY = snoise(vec3(pos.xy * freq * 99  + 10.0, speed)) * motionMask;
     float noiseZ = snoise(vec3(pos.xy * freq + 20.0, speed));
     pos.x += noiseX * uTurbulenceXY * 0.01; 
     pos.y += noiseY * uTurbulenceXY * 0.01;
     float bright = (col.r + col.g + col.b) / 5.0;
-    pos.z += (bright * extrusion) + (noiseZ * uTurbulence);
+    pos.z += (bright * extrusion) + (noiseZ * uTurbulence) * motionMask;
 
     // SIZE
     vec4 eyePos = modelViewMatrix * pos;
     float dist = length(eyePos.xyz);
     float noiseSize = snoise(vec3(pos.xy * freq * 0.5, speed));
-    float dynamicSize = uPointSize * (1.0 + noiseSize * uTurbulence);
+    float dynamicSize = uPointSize * (1.0 + noiseSize * uTurbulence) * (0.5 + motionMask * 0.5);
     gl_PointSize = dynamicSize * (500.0 / dist);
     gl_Position = modelViewProjectionMatrix * pos;
 }

@@ -13,15 +13,17 @@ void ofApp::setup() {
 
     meshShader.load("shaders/mesh");
     renderFbo.allocate(1920, 1080, GL_RGBA);
+    diffShader.load("shaders/diff");
+    motionFbo.allocate(1920, 1080, GL_RGBA);
 
     // --- Setup GUI ---
     gui.setup("Parametres Cloud");
     onoff.setName("Affichage");
     onoff.add(showVideo.set("Afficher Video", true));
-    onoff.add(videoOpacity.set("Video Opacity", 255, 0, 255));
+    onoff.add(videoOpacity.set("Video Opacity", 1, 0, 1));
     onoff.add(showMesh.set("Afficher Mesh", true));
     onoff.add(smoothFactor.set("Lissage Global", 0.01, 0.01, 0.5));
-    onoff.add(feedback.set("Feedback", 255, 0, 255));
+    onoff.add(motionThreshold.set("Seuil Mouvement", 0.1, 0.0, 1.0));
     points.setName("Points");
     points.add(extrusionAmount.set("Extrusion", 0.0, 0.0, 10.0));
     points.add(pointSize.set("Taille Points", 2.0, 0.5, 50.0));
@@ -132,26 +134,44 @@ void ofApp::update() {
 
 //--------------------------------------------------------------
 void ofApp::draw() {
-    // 1. On "réveille" Syphon sans rien dessiner
-    if(syphonClient.isSetup()){
-        syphonClient.lockTexture();
-        if(syphonClient.getTexture().isAllocated()){
-            texCopy = syphonClient.getTexture(); // On récupère l'image
-        }
-        syphonClient.unlockTexture();
+    if(!syphonClient.isSetup()) return;
+
+    // 1. Récupération Syphon standard
+    syphonClient.lockTexture();
+    if(syphonClient.getTexture().isAllocated()){
+        texCopy = syphonClient.getTexture();
+    }
+    syphonClient.unlockTexture();
+    if(!texCopy.isAllocated()) return;
+
+    // 2. Initialisation du FBO de mémoire si besoin
+    if(!prevFbo.isAllocated()){
+        prevFbo.allocate(texCopy.getWidth(), texCopy.getHeight(), GL_RGBA);
+        prevFbo.begin(); ofClear(0, 255); prevFbo.end();
     }
 
-    renderFbo.begin();
-    ofClear(0, 0, 0, 255);
-    // ofEnableAlphaBlending();
-    // ofSetColor(0, 0, 0, feedback); 
-    // ofDrawRectangle(0, 0, renderFbo.getWidth(), renderFbo.getHeight());
-
-    if(texCopy.isAllocated()){
-        ofEnableDepthTest();
+    // --- PASSE 1 : CALCUL DU MOUVEMENT ---
+    motionFbo.begin();
+        // ofClear(0, 255);
         ofEnableAlphaBlending();
+        ofSetColor(0, 0, 0, 15); 
+        ofDrawRectangle(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
+        diffShader.begin();
+            diffShader.setUniformTexture("tex0", texCopy, 0);
+            // On utilise la texture du FBO de la frame précédente
+            diffShader.setUniformTexture("texPrev", prevFbo.getTexture(), 1);
+            diffShader.setUniform1f("uThreshold", motionThreshold);
+            diffShader.setUniform1f("uOpacity", videoOpacity);
+            
+            texCopy.draw(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
+        diffShader.end();
+    motionFbo.end();
 
-        // 1. On utilise les dimensions du FBO (1920x1080)
+    // --- PASSE 2 : RENDU FINAL ---
+    renderFbo.begin();
+        ofClear(0, 0, 0, 255);
+        ofEnableDepthTest();
+
         float fboW = renderFbo.getWidth();
         float fboH = renderFbo.getHeight();
         float aspect = texCopy.getWidth() / texCopy.getHeight();
@@ -161,31 +181,38 @@ void ofApp::draw() {
             ofScale(fboH, fboH, fboH);
 
             if(showVideo){
-                ofSetColor(255, 255, 255, videoOpacity);
-                texCopy.draw(-aspect/2.0, -0.5, -0.01, aspect, 1.0);
+                // On dessine le résultat du motionFbo directement
+                ofSetColor(255);
+                motionFbo.getTexture().draw(-aspect/2.0, -0.5, -0.01, aspect, 1.0);
             }
+
             if(showMesh){
                 meshShader.begin();
-                    meshShader.setUniformTexture("tex0", texCopy, 0);
+                    // On passe le motionFbo comme texture principale !
+                    meshShader.setUniformTexture("tex0", motionFbo.getTexture(), 0);
                     meshShader.setUniform1f("extrusion", smoothedParams["Extrusion"]);
                     meshShader.setUniform1f("uPointSize", smoothedParams["Taille Points"]);
                     meshShader.setUniform1f("uTurbulence", smoothedParams["Turbulence"]);
                     meshShader.setUniform1f("uTurbulenceXY", smoothedParams["TurbulenceXY"]);
-                    meshShader.setUniform1f("uStretchX", smoothedParams["Etirement X"]);
-                    meshShader.setUniform1f("uStretchY", smoothedParams["Etirement Y"]);
+                    meshShader.setUniform1f("uStretchX", stretchX);
+                    meshShader.setUniform1f("uStretchY", stretchY);
                     meshShader.setUniform1f("uTime", ofGetElapsedTimef());
                     meshShader.setUniform4f("uColorTint", colorTint->r/255.0, colorTint->g/255.0, colorTint->b/255.0, colorTint->a/255.0);
                     mainMesh.draw();
                 meshShader.end();
             }
         ofPopMatrix();
-        ofDisableDepthTest();
-    }
     renderFbo.end();
 
-    ofSetColor(255);
+    // Affichage final
+    ofDisableDepthTest();
     renderFbo.draw(0, 0, ofGetWidth(), ofGetHeight());
     syphonServer.publishTexture(&renderFbo.getTexture());
+    
+    prevFbo.begin();
+        ofClear(0, 255);
+        texCopy.draw(0, 0);
+    prevFbo.end();
 
     gui.draw();
 }

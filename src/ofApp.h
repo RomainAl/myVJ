@@ -33,7 +33,10 @@ public:
     ofShader meshShader;
     ofVboMesh mainMesh;
     ofFbo renderFbo;
-    ofEasyCam cam;
+    ofShader diffShader;
+    ofFbo motionFbo;
+    ofFbo prevFbo;
+
 
     // --- Var ---
     string serverName;
@@ -43,9 +46,9 @@ public:
     ofxPanel gui;
     ofParameterGroup onoff;
     ofParameter<bool> showVideo;
-    ofParameter<int> videoOpacity;
+    ofParameter<float> videoOpacity;
     ofParameter<float> smoothFactor;
-    ofParameter<int> feedback;
+    ofParameter<float> motionThreshold;
     ofParameterGroup points;
     ofParameter<bool> showMesh;
     ofParameter<float> extrusionAmount;
@@ -59,5 +62,5 @@ public:
     ofParameter<float> zOffset;
     std::map<string, float> smoothedParams;
     ofXml settings;
-    void onDensityChanged(int & val); // Pour régénérer le mesh si on change la densité
+    void onDensityChanged(int & val);
 };
