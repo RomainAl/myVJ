@@ -1,31 +1,58 @@
 #version 150
 uniform sampler2DRect tex0;
 uniform sampler2DRect texPrev;
+uniform sampler2DRect texFeedback;
 uniform float uThreshold;
 uniform float uOpacity;
+uniform float uBlockSizeSpeed;
+uniform float uMoshIntensity;
+uniform float uTime;
+uniform int uMoshScale;
+
 in vec2 vTexCoord;
 out vec4 outputColor;
 
+// Fonction de hasard basée sur la position
+float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
 void main() {
-    // 1. Coordonnées (avec inversion Y pour texPrev si nécessaire comme vu avant)
+    vec2 size = textureSize(texFeedback);
     vec2 uvNow = vTexCoord;
-    vec2 size = textureSize(texPrev);
-    vec2 uvPre = vec2(vTexCoord.x, size.y - vTexCoord.y);
+    vec2 uvFbo = vec2(vTexCoord.x, size.y - vTexCoord.y);
 
-    vec4 now = texture(tex0, uvNow);
-    vec4 pre = texture(texPrev, uvPre);
-    
-    // 2. Calcul du masque de mouvement
-    float d = length(now.rgb - pre.rgb);
-    float mask = smoothstep(uThreshold, uThreshold + 0.3, d);
-    
-    // 3. LA LOGIQUE MAGIQUE :
-    // Si uThreshold est à 0, finalMask sera proche de 1.0 partout.
-    // On utilise uThreshold pour doser l'influence du masque.
-    // On peut aussi utiliser un simple if ou un mix :
-    
-    float influenceMouvement = clamp(uThreshold * 5.0, 0.0, 1.0); // Monte vite à 1.0
-    float finalMask = mix(1.0, mask, influenceMouvement);
+    // --- 1. GÉNÉRATION DE TAILLE ALÉATOIRE ---
+    float noise = hash(floor(uvNow / 256.0) + floor(uTime * uBlockSizeSpeed));
+    float exponent = floor(pow(noise, 3.0) * float(uMoshScale)) + 1.0; 
+    float blockSize = pow(2.0, exponent);
 
-    outputColor = vec4(now.rgb * finalMask, finalMask * uOpacity);
+    // --- 2. APPLICATION DES BLOCS ---
+    vec2 blockUV = floor(uvNow / blockSize) * blockSize;
+    vec2 blockUVFbo = floor(uvFbo / blockSize) * blockSize;
+
+    // Analyse du mouvement sur ce bloc spécifique
+    vec4 nowBlock = texture(tex0, blockUV);
+    vec4 preBlock = texture(texPrev, blockUVFbo);
+    
+    // Vecteur de mouvement
+    vec2 motionVec = (nowBlock.rg - preBlock.rg) * uMoshIntensity * 60.0;
+
+    // --- 3. DÉCALAGE ET LECTURE ---
+    float d = length(nowBlock.rgb - preBlock.rgb);
+    float mask = step(uThreshold, d);
+    
+    // On n'applique le décalage que si le bloc "saute" le seuil
+    vec2 offset = mask * motionVec;
+    
+    // On lit le feedback déformé
+    vec4 feedback = texture(texFeedback, uvFbo - offset);
+    vec4 currentRes = texture(tex0, uvNow);
+
+    // Mélange final
+    vec3 color = mix(feedback.rgb, currentRes.rgb, uOpacity * mask);
+    
+    outputColor = vec4(color, 1.0);
 }

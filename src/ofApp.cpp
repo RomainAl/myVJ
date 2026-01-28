@@ -3,6 +3,8 @@
 //--------------------------------------------------------------
 void ofApp::setup() {
     ofSetBackgroundColor(0);
+    ofSetFrameRate(60); // Aligne-toi sur la source standard (Resolume/HeavyM)
+    // ofSetVerticalSync(true); // Évite les déchirures et stabilise le flux
     // ofSetLogLevel("ofxSyphonClient", OF_LOG_FATAL_ERROR);
     glEnable(GL_PROGRAM_POINT_SIZE); // Pour que gl_PointSize = uPointSize; marche dans le shader, sinon ça reste dans le context d'OF !
     ofAddListener(dir.events.serverAnnounced, this, &ofApp::serverAnnounced);
@@ -26,6 +28,10 @@ void ofApp::setup() {
     onoff.add(showFaces.set("Afficher Faces", false));
     onoff.add(smoothFactor.set("Lissage Global", 0.01, 0.01, 0.5));
     onoff.add(motionThreshold.set("Seuil Mouvement", 0.0, 0.0, 1.0));
+    onoff.add(persistence.set("Persistence", 2, 1, 255));
+    onoff.add(moshIntensity.set("Mosh Intensity", 0.0, 0.0, 1.0));
+    onoff.add(blockSizeSpeed.set("blockSizeSpeed", 0.0, 0.0, 100.0));
+    onoff.add(moshScale.set("moshScale", 8, 1, 9));
     points.setName("Points");
     points.add(extrusionAmount.set("Extrusion", 0.0, 0.0, 10.0));
     points.add(pointSize.set("Taille Points", 2.0, 0.5, 50.0));
@@ -111,7 +117,10 @@ void ofApp::serverRetired(ofxSyphonServerDirectoryEventArgs &arg){
 //--------------------------------------------------------------
 void ofApp::update() {
     static float lastAspect = 0;
-    float currentAspect = texCopy.getWidth() / texCopy.getHeight();
+    float currentAspect = 16.0/9.0;
+    if(texCopy.isAllocated() && texCopy.getHeight() > 0){
+        currentAspect = texCopy.getWidth() / texCopy.getHeight();
+    }
     
     if(currentAspect != lastAspect) {
         int d = meshDensity;
@@ -164,24 +173,28 @@ void ofApp::draw() {
 
     // --- PASSE 1 : CALCUL DU MOUVEMENT ---
     motionFbo.begin();
-        if(motionThreshold > 0.001) {
+        if(persistence >= 255) {
+            ofClear(0, 255);
+        } else {
             ofEnableAlphaBlending();
-            ofSetColor(0, 0, 0, 15); 
+            ofSetColor(0, 0, 0, persistence); 
             ofDrawRectangle(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
             ofDisableAlphaBlending();
-        } else {
-            // Si threshold à 0, on vide proprement pour avoir l'image nette
-            ofClear(0, 255);
         }
+        ofEnableBlendMode(OF_BLENDMODE_ADD);
         diffShader.begin();
             diffShader.setUniformTexture("tex0", texCopy, 0);
-            // On utilise la texture du FBO de la frame précédente
             diffShader.setUniformTexture("texPrev", prevFbo.getTexture(), 1);
+            diffShader.setUniformTexture("texFeedback", motionFbo.getTexture(), 2);
             diffShader.setUniform1f("uThreshold", motionThreshold);
             diffShader.setUniform1f("uOpacity", videoOpacity);
-            
+            diffShader.setUniform1f("uBlockSizeSpeed", blockSizeSpeed);
+            diffShader.setUniform1i("uMoshScale", moshScale);
+            diffShader.setUniform1f("uMoshIntensity", moshIntensity);
+            diffShader.setUniform1f("uTime", ofGetElapsedTimef());
             texCopy.draw(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
         diffShader.end();
+        ofDisableBlendMode();
     motionFbo.end();
 
     // --- PASSE 2 : RENDU FINAL ---
@@ -238,11 +251,12 @@ void ofApp::draw() {
     renderFbo.end();
     renderFbo.draw(0, 0, ofGetWidth(), ofGetHeight());
     syphonServer.publishTexture(&renderFbo.getTexture());
-    
+
     prevFbo.begin();
         ofClear(0, 255);
         texCopy.draw(0, 0);
     prevFbo.end();
+
 
     gui.draw();
 }

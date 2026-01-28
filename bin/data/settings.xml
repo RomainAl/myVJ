@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<SETTINGS>
+	<Affichage>
+		<Afficher_Video>1</Afficher_Video>
+		<Video_Opacity>1</Video_Opacity>
+		<Afficher_Mesh>0</Afficher_Mesh>
+		<Afficher_Wireframe>0</Afficher_Wireframe>
+		<Afficher_Faces>0</Afficher_Faces>
+		<Lissage_Global>0.4925</Lissage_Global>
+		<Seuil_Mouvement>0.602041</Seuil_Mouvement>
+		<Persistence>177</Persistence>
+		<Mosh_Intensity>1</Mosh_Intensity>
+	</Affichage>
+	<Points>
+		<Extrusion>0</Extrusion>
+		<Taille_Points>2</Taille_Points>
+		<Densite>200</Densite>
+		<Turbulence>0</Turbulence>
+		<TurbulenceXY>0</TurbulenceXY>
+		<Etirement_X>1</Etirement_X>
+		<Etirement_Y>1</Etirement_Y>
+		<Teinte>255, 255, 255, 255</Teinte>
+		<Recul__Z_>0</Recul__Z_>
+	</Points>
+</SETTINGS>
