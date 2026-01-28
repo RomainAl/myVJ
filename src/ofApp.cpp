@@ -31,7 +31,7 @@ void ofApp::setup() {
     onoff.add(persistence.set("Persistence", 2, 1, 255));
     onoff.add(moshIntensity.set("Mosh Intensity", 0.0, 0.0, 1.0));
     onoff.add(blockSizeSpeed.set("blockSizeSpeed", 0.0, 0.0, 100.0));
-    onoff.add(moshScale.set("moshScale", 8, 1, 9));
+    onoff.add(moshScale.set("moshScale", 8, 1, 10));
     points.setName("Points");
     points.add(extrusionAmount.set("Extrusion", 0.0, 0.0, 10.0));
     points.add(pointSize.set("Taille Points", 2.0, 0.5, 50.0));
@@ -181,7 +181,7 @@ void ofApp::draw() {
             ofDrawRectangle(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
             ofDisableAlphaBlending();
         }
-        ofEnableBlendMode(OF_BLENDMODE_ADD);
+        ofDisableBlendMode();
         diffShader.begin();
             diffShader.setUniformTexture("tex0", texCopy, 0);
             diffShader.setUniformTexture("texPrev", prevFbo.getTexture(), 1);
@@ -263,21 +263,22 @@ void ofApp::draw() {
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
+    if(key == 's'){
+        diffShader.load("shaders/diff");
+        ofLogNotice() << "Shader rechargé !";
+    } else if (key == OF_KEY_SPACE){
+        if (dir.size() > 0)
+        {
+            dirIdx++;
+            if(dirIdx > dir.size() - 1)
+                dirIdx = 0;
 
-}
-
-//--------------------------------------------------------------
-void ofApp::keyReleased(int key){
-    //press any key to move through all available Syphon servers
-    if (dir.size() > 0)
-    {
-        dirIdx++;
-        if(dirIdx > dir.size() - 1)
-            dirIdx = 0;
-
-        syphonClient.set(dir.getDescription(dirIdx));
+            syphonClient.set(dir.getDescription(dirIdx));
+        }
     }
 }
+//--------------------------------------------------------------
+void ofApp::keyReleased(int key){}
 
 //--------------------------------------------------------------
 void ofApp::mouseMoved(int x, int y ){}

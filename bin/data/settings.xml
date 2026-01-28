@@ -2,14 +2,16 @@
 <SETTINGS>
 	<Affichage>
 		<Afficher_Video>1</Afficher_Video>
-		<Video_Opacity>1</Video_Opacity>
+		<Video_Opacity>0.428571</Video_Opacity>
 		<Afficher_Mesh>0</Afficher_Mesh>
 		<Afficher_Wireframe>0</Afficher_Wireframe>
 		<Afficher_Faces>0</Afficher_Faces>
 		<Lissage_Global>0.4925</Lissage_Global>
-		<Seuil_Mouvement>0.602041</Seuil_Mouvement>
-		<Persistence>177</Persistence>
+		<Seuil_Mouvement>0</Seuil_Mouvement>
+		<Persistence>73</Persistence>
 		<Mosh_Intensity>1</Mosh_Intensity>
+		<blockSizeSpeed>14.2857</blockSizeSpeed>
+		<moshScale>7</moshScale>
 	</Affichage>
 	<Points>
 		<Extrusion>0</Extrusion>
