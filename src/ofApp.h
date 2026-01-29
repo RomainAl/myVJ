@@ -50,9 +50,15 @@ public:
     ofParameter<float> videoOpacity;
     ofParameter<float> smoothFactor;
     ofParameter<float> motionThreshold;
+    vector<ofFbo> frameBuffer;
+    int writeIndex = 0;
+    ofParameter<int> delayFrames;
     ofParameter<int> persistence;
     ofParameter<float> moshIntensity;
     ofParameter<float> blockSizeSpeed;
+    ofParameter<float> uBrightness;
+    ofParameter<float> uContrast;
+    ofParameter<float> uSaturation;
     ofParameter<int> moshScale;
     ofParameter<bool> showWireframe;
     ofParameter<bool> showFaces;

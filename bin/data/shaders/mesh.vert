@@ -1,7 +1,7 @@
 #version 150
 
 uniform mat4 modelViewProjectionMatrix;
-uniform mat4 modelViewMatrix; // Ajout important pour calculer la distance à la caméra
+uniform mat4 modelViewMatrix;
 uniform sampler2DRect tex0;
 uniform float extrusion;
 uniform float uPointSize;
@@ -10,8 +10,11 @@ uniform float uTurbulence;
 uniform float uTurbulenceXY;
 uniform vec4 uColorTint;
 
-in vec4 position;
-in vec2 texcoord;
+// NOUVEAUX UNIFORMS pour le calcul de position GPU
+uniform float meshDensity; 
+
+in vec4 position; // Reçoit maintenant (xIndex, yIndex, 0)
+in vec2 texcoord; // Reçoit les UVs (0.0 à 1.0)
 
 out vec4 vColor;
 
@@ -64,29 +67,37 @@ float snoise(vec3 v) {
   return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
 }
 
+
 void main() {
     vec2 texSize = textureSize(tex0);
+    
     vec4 col = texture(tex0, texcoord * texSize);
     vColor = col * uColorTint;
-    vec4 pos = position;
     float motionMask = col.a;
 
-    // POS
+    // --- CALCUL DE POSITION GPU ---
+    float autoAspect = texSize.x / max(texSize.y, 1.0);
+    vec4 pos = vec4(0.0, 0.0, 0.0, 1.0);
+    pos.x = (texcoord.x - 0.5) * autoAspect;
+    pos.y = (texcoord.y - 0.5);
+
     float freq = 1.5;
     float speed = uTime * 0.5;
     float noiseX = snoise(vec3(pos.xy * freq * 110, speed)) * motionMask;
     float noiseY = snoise(vec3(pos.xy * freq * 99  + 10.0, speed)) * motionMask;
     float noiseZ = snoise(vec3(pos.xy * freq + 20.0, speed));
+    
     pos.x += noiseX * uTurbulenceXY * 0.01; 
     pos.y += noiseY * uTurbulenceXY * 0.01;
     float bright = (col.r + col.g + col.b) / 5.0;
     pos.z += (bright * extrusion) + (noiseZ * uTurbulence) * motionMask;
 
-    // SIZE
+    // SIZE & PROJECTION
     vec4 eyePos = modelViewMatrix * pos;
     float dist = length(eyePos.xyz);
     float noiseSize = snoise(vec3(pos.xy * freq * 0.5, speed));
-    float dynamicSize = uPointSize * (1.0 + noiseSize * uTurbulence) * (0.5 + motionMask * 0.5);
+    float pointSize = uPointSize * (200.0 / meshDensity);
+    float dynamicSize = pointSize * (1.0 + noiseSize * uTurbulence) * (0.5 + motionMask * 0.5);
     gl_PointSize = dynamicSize * (500.0 / dist);
     gl_Position = modelViewProjectionMatrix * pos;
 }

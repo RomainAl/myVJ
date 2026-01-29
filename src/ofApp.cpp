@@ -28,10 +28,14 @@ void ofApp::setup() {
     onoff.add(showFaces.set("Afficher Faces", false));
     onoff.add(smoothFactor.set("Lissage Global", 0.01, 0.01, 0.5));
     onoff.add(motionThreshold.set("Seuil Mouvement", 0.0, 0.0, 1.0));
+    onoff.add(delayFrames.set("Mosh Delay", 1, 1, 58));
     onoff.add(persistence.set("Persistence", 2, 1, 255));
     onoff.add(moshIntensity.set("Mosh Intensity", 0.0, 0.0, 1.0));
     onoff.add(blockSizeSpeed.set("blockSizeSpeed", 0.0, 0.0, 100.0));
     onoff.add(moshScale.set("moshScale", 8, 1, 10));
+    onoff.add(uSaturation.set("Mosh Saturation", 1.0, 0.0, 3.0));
+    onoff.add(uContrast.set("Mosh Contraste", 1.0, 0.0, 3.0));
+    onoff.add(uBrightness.set("Mosh Brightness", 1.0, 0.0, 3.0));
     points.setName("Points");
     points.add(extrusionAmount.set("Extrusion", 0.0, 0.0, 10.0));
     points.add(pointSize.set("Taille Points", 2.0, 0.5, 50.0));
@@ -59,20 +63,22 @@ void ofApp::setup() {
 }
 
 void ofApp::onDensityChanged(int & val) {
+    bool computeWire = (val <= 200);
     mainMesh.clear();
     mainMesh.setMode(OF_PRIMITIVE_POINTS);
     wireframeMesh.clear();
     wireframeMesh.setMode(OF_PRIMITIVE_TRIANGLES);
 
+    // On garde le calcul de l'aspect pour savoir combien de points créer
     float aspect = texCopy.isAllocated() ? (texCopy.getWidth() / texCopy.getHeight()) : (16.0 / 9.0);
     int numY = val;
     int numX = (int)(val * aspect);
 
     for(int y=0; y<numY; y++) {
         for(int x=0; x<numX; x++) {
-            float posX = ((float)x / (numX - 1) - 0.5) * aspect;
-            float posY = ((float)y / (numY - 1) - 0.5);
-            glm::vec3 pos(posX, posY, 0);
+            // STRATÉGIE GPU : On envoie juste l'index x et y dans la position
+            // On laisse z à 0. Les UVs servent à lire la texture.
+            glm::vec3 pos(x, y, 0); 
             glm::vec2 uv((float)x / (numX - 1), (float)y / (numY - 1));
 
             mainMesh.addVertex(pos);
@@ -80,14 +86,15 @@ void ofApp::onDensityChanged(int & val) {
 
             wireframeMesh.addVertex(pos);
             wireframeMesh.addTexCoord(uv);
-
-            if(x < numX - 1 && y < numY - 1) {
-                int i1 = x + y * numX;
-                int i2 = (x + 1) + y * numX;
-                int i3 = x + (y + 1) * numX;
-                int i4 = (x + 1) + (y + 1) * numX;
-                wireframeMesh.addIndex(i1); wireframeMesh.addIndex(i2); wireframeMesh.addIndex(i3);
-                wireframeMesh.addIndex(i2); wireframeMesh.addIndex(i4); wireframeMesh.addIndex(i3);
+            if(computeWire) {
+                if(x < numX - 1 && y < numY - 1) {
+                    int i1 = x + y * numX;
+                    int i2 = (x + 1) + y * numX;
+                    int i3 = x + (y + 1) * numX;
+                    int i4 = (x + 1) + (y + 1) * numX;
+                    wireframeMesh.addIndex(i1); wireframeMesh.addIndex(i2); wireframeMesh.addIndex(i3);
+                    wireframeMesh.addIndex(i2); wireframeMesh.addIndex(i4); wireframeMesh.addIndex(i3);
+                }
             }
         }
     }
@@ -118,15 +125,19 @@ void ofApp::serverRetired(ofxSyphonServerDirectoryEventArgs &arg){
 void ofApp::update() {
     static float lastAspect = 0;
     float currentAspect = 16.0/9.0;
+    
     if(texCopy.isAllocated() && texCopy.getHeight() > 0){
         currentAspect = texCopy.getWidth() / texCopy.getHeight();
     }
     
+    // 1. Régénération du mesh si l'aspect change
     if(currentAspect != lastAspect) {
         int d = meshDensity;
-        onDensityChanged(d); // On force la régénération du mesh
+        onDensityChanged(d); 
         lastAspect = currentAspect;
     }
+
+    // 2. Infos Syphon pour le titre de la fenêtre
     if (syphonClient.isSetup()){
         serverName = syphonClient.getServerName();
         appName = syphonClient.getApplicationName();
@@ -134,9 +145,10 @@ void ofApp::update() {
         serverName = ""; 
         appName = "";
     }
-    std::string title = serverName + " : " + appName + " | FPS: " + ofToString(ofGetFrameRate(), 0);
+    string title = serverName + " : " + appName + " | FPS: " + ofToString(ofGetFrameRate(), 0);
     ofSetWindowTitle(title);
 
+    // 3. Lissage des paramètres (Smoothing)
     vector<ofParameter<float>*> toSmooth = { 
         &extrusionAmount, &turbulence, &turbulenceXY, 
         &pointSize, &zOffset, &stretchX, &stretchY,
@@ -144,12 +156,29 @@ void ofApp::update() {
 
     for(auto p : toSmooth) {
         string name = p->getName();
-        // Si le paramètre n'existe pas encore dans la map, on l'initialise
         if(smoothedParams.find(name) == smoothedParams.end()) {
             smoothedParams[name] = p->get();
         }
-        // Calcul du Lerp : ValeurCourante += (Cible - ValeurCourante) * vitesse
         smoothedParams[name] += (p->get() - smoothedParams[name]) * smoothFactor;
+    }
+
+    // 4. Gestion du Buffer Circulaire (Allocation et redimensionnement)
+    if(texCopy.isAllocated()) {
+        int w = texCopy.getWidth();
+        int h = texCopy.getHeight();
+
+        if(frameBuffer.empty() || frameBuffer[0].getWidth() != w || frameBuffer[0].getHeight() != h) {
+            frameBuffer.clear();
+            frameBuffer.resize(60); // 60 frames = 1 seconde de buffer à 60fps
+            for(int i=0; i<60; i++) {
+                frameBuffer[i].allocate(w, h, GL_RGBA);
+                frameBuffer[i].begin(); 
+                ofClear(0, 255); // CORRECTION WARNING : brightness, alpha
+                frameBuffer[i].end();
+            }
+            writeIndex = 0; // On reset l'index si on change de taille
+            ofLogNotice("Buffer") << "Allocated 60 frames at " << w << "x" << h;
+        }
     }
 }
 
@@ -157,7 +186,6 @@ void ofApp::update() {
 void ofApp::draw() {
     if(!syphonClient.isSetup()) return;
 
-    // 1. Récupération Syphon standard
     syphonClient.lockTexture();
     if(syphonClient.getTexture().isAllocated()){
         texCopy = syphonClient.getTexture();
@@ -165,26 +193,31 @@ void ofApp::draw() {
     syphonClient.unlockTexture();
     if(!texCopy.isAllocated()) return;
 
-    // 2. Initialisation du FBO de mémoire si besoin
-    if(!prevFbo.isAllocated()){
-        prevFbo.allocate(texCopy.getWidth(), texCopy.getHeight(), GL_RGBA);
-        prevFbo.begin(); ofClear(0, 255); prevFbo.end();
-    }
+    if(frameBuffer.empty() || !frameBuffer[0].isAllocated()) return;
+
+    frameBuffer[writeIndex].begin();
+        texCopy.draw(0, 0);
+    frameBuffer[writeIndex].end();
+
+    int d = ofClamp(delayFrames, 1, (int)frameBuffer.size() - 1);
+    int readIndex = (writeIndex - d + (int)frameBuffer.size()) % (int)frameBuffer.size();
+    writeIndex = (writeIndex + 1) % (int)frameBuffer.size();
 
     // --- PASSE 1 : CALCUL DU MOUVEMENT ---
     motionFbo.begin();
         if(persistence >= 255) {
-            ofClear(0, 255);
+            ofClear(0, 0, 0, 255);
         } else {
             ofEnableAlphaBlending();
             ofSetColor(0, 0, 0, persistence); 
             ofDrawRectangle(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
             ofDisableAlphaBlending();
         }
-        ofDisableBlendMode();
+        
         diffShader.begin();
             diffShader.setUniformTexture("tex0", texCopy, 0);
-            diffShader.setUniformTexture("texPrev", prevFbo.getTexture(), 1);
+            diffShader.setUniformTexture("texPrev", frameBuffer[readIndex].getTexture(), 1);
+            
             diffShader.setUniformTexture("texFeedback", motionFbo.getTexture(), 2);
             diffShader.setUniform1f("uThreshold", motionThreshold);
             diffShader.setUniform1f("uOpacity", videoOpacity);
@@ -192,9 +225,12 @@ void ofApp::draw() {
             diffShader.setUniform1i("uMoshScale", moshScale);
             diffShader.setUniform1f("uMoshIntensity", moshIntensity);
             diffShader.setUniform1f("uTime", ofGetElapsedTimef());
+            diffShader.setUniform1f("uBrightness", uBrightness);
+            diffShader.setUniform1f("uContrast", uContrast);
+            diffShader.setUniform1f("uSaturation", uSaturation);
+            
             texCopy.draw(0, 0, motionFbo.getWidth(), motionFbo.getHeight());
         diffShader.end();
-        ofDisableBlendMode();
     motionFbo.end();
 
     // --- PASSE 2 : RENDU FINAL ---
@@ -219,8 +255,8 @@ void ofApp::draw() {
             if(showMesh){
                 ofDisableDepthTest();
                 meshShader.begin();
-                    // On passe le motionFbo comme texture principale !
                     meshShader.setUniformTexture("tex0", motionFbo.getTexture(), 0);
+                    meshShader.setUniform1f("meshDensity", (float)meshDensity);
                     meshShader.setUniform1f("extrusion", smoothedParams["Extrusion"]);
                     meshShader.setUniform1f("uPointSize", smoothedParams["Taille Points"]);
                     meshShader.setUniform1f("uTurbulence", smoothedParams["Turbulence"]);
@@ -233,13 +269,11 @@ void ofApp::draw() {
 
                     if(showFaces){
                         meshShader.setUniform1f("uAlphaMult", 0.2);
-                        wireframeMesh.setMode(OF_PRIMITIVE_TRIANGLES);
                         wireframeMesh.drawFaces(); 
                     }
 
-                    // 3. LE WIREFRAME (Les arrêtes)
                     if(showWireframe){
-                        meshShader.setUniform1f("uAlphaMult", 0.6);
+                        meshShader.setUniform1f("uAlphaMult", 0.5);
                         wireframeMesh.drawWireframe();
                     }
                     
@@ -252,12 +286,6 @@ void ofApp::draw() {
     renderFbo.draw(0, 0, ofGetWidth(), ofGetHeight());
     syphonServer.publishTexture(&renderFbo.getTexture());
 
-    prevFbo.begin();
-        ofClear(0, 255);
-        texCopy.draw(0, 0);
-    prevFbo.end();
-
-
     gui.draw();
 }
 
@@ -265,7 +293,8 @@ void ofApp::draw() {
 void ofApp::keyPressed(int key){
     if(key == 's'){
         diffShader.load("shaders/diff");
-        ofLogNotice() << "Shader rechargé !";
+        meshShader.load("shaders/mesh");
+        ofLogNotice() << "Shaders rechargés !";
     } else if (key == OF_KEY_SPACE){
         if (dir.size() > 0)
         {
